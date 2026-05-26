@@ -1,7 +1,10 @@
 import os
+import socket
 from dotenv import load_dotenv
 import azure.cognitiveservices.speech as speechsdk
 
+UNITY_IP = "127.0.0.1"
+UNITY_PORT = 5005
 
 def speak_to_microphone(api_key, region):
     speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
@@ -13,14 +16,21 @@ def speak_to_microphone(api_key, region):
     speech_recognizer.properties.set_property(speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "5000")
     speech_recognizer.properties.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "5000")
 
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    print(f"UDP connection -> {UNITY_IP}:{UNITY_PORT}")
+
     print("powiedz cos")
     
     while True:
         speech_recognition_result = speech_recognizer.recognize_once_async().get()
 
         if speech_recognition_result.reason == speechsdk.ResultReason.RecognizedSpeech:
-            print("Rozpoznano: {}".format(speech_recognition_result.text))
-            if "koniec tekstu" in speech_recognition_result.text.lower():
+            text = speech_recognition_result.text
+            print("Rozpoznano: {}".format(text))
+
+            sock.sendto(text.encode("utf-8"), (UNITY_IP, UNITY_PORT))
+
+            if "koniec tekstu" in text.lower():
                 print("Koniec rozpoznawania")
                 break
         elif speech_recognition_result.reason == speechsdk.ResultReason.NoMatch:
