@@ -6,6 +6,7 @@ import azure.cognitiveservices.speech as speechsdk
 UNITY_IP = "127.0.0.1"
 UNITY_PORT = 5005
 
+
 def speak_to_microphone(api_key, region):
     speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
     speech_config.speech_recognition_language = "pl-PL"
