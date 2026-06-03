@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using TMPro;
 using UnityEngine.UI;
 
@@ -72,6 +72,17 @@ public class AppStateManager : MonoBehaviour
 
     private void StartRecording()
     {
-        transcriptionText.text = mockTranscription;
+        // Jeśli chcesz mieć testowy tekst tylko, gdy aplikacja nie jest połączona,
+        // zrób warunek. W innym razie, wyczyść pole:
+
+        SpeechReceiver receiver = Object.FindFirstObjectByType<SpeechReceiver>();
+        if (receiver != null)
+        {
+            receiver.ClearTranscription();
+        }
+        else
+        {
+            transcriptionText.text = mockTranscription; // Fallback w razie braku skryptu sieciowego
+        }
     }
 }

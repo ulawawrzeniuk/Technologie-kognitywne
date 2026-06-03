@@ -18,7 +18,6 @@ public class SpeechReceiver : MonoBehaviour
     private Thread receiveThread;
     private bool isListening = false;
 
-    // Bezpieczna kolejka do przekazywania tekstu między wątkami
     private ConcurrentQueue<string> messageQueue = new ConcurrentQueue<string>();
 
     void Start()
@@ -32,18 +31,19 @@ public class SpeechReceiver : MonoBehaviour
         {
             udpClient = new UdpClient(port);
             isListening = true;
-            receiveThread = new Thread(ReceiveData);
-            receiveThread.IsBackground = true;
+            receiveThread = new Thread(ReceiveData)
+            {
+                IsBackground = true
+            };
             receiveThread.Start();
-            Debug.Log("SpeechReceiver nasłuchuje na porcie UDP: " + port);
+            Debug.Log($"[SpeechReceiver] Rozpoczęto nasłuchiwanie na porcie UDP: {port}");
         }
         catch (System.Exception e)
         {
-            Debug.LogError("Nie można otworzyć portu UDP: " + e.Message);
+            Debug.LogError($"[SpeechReceiver] Błąd krytyczny inicjalizacji UDP: {e.Message}");
         }
     }
 
-    // Ten kod wykonuje się w tle i nie blokuje płynności VR
     private void ReceiveData()
     {
         IPEndPoint anyIP = new IPEndPoint(IPAddress.Any, port);
@@ -54,28 +54,49 @@ public class SpeechReceiver : MonoBehaviour
                 byte[] data = udpClient.Receive(ref anyIP);
                 string text = Encoding.UTF8.GetString(data);
 
-                // Zamiast zmieniać UI, wrzucamy tekst do bezpiecznej kolejki
-                messageQueue.Enqueue(text);
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    // LOG 1: Potwierdzenie, że sieć fizycznie odebrała bajty z Pythona
+                    Debug.Log($"[SpeechReceiver - Sieć] Odebrano pakiet UDP: '{text}'");
+                    messageQueue.Enqueue(text);
+                }
             }
             catch (SocketException)
             {
-                // Zignoruj błąd zamykania gniazda podczas wyłączania gry
+                // Oczekiwany błąd przy zamykaniu aplikacji
             }
         }
     }
 
-    // Główny wątek Unity, który ma prawo edytować UI
     void Update()
     {
-        // Sprawdzamy, czy w kolejce czekają nowe słowa od Pythona
+        // Przetwarzanie kolejki w głównym wątku Unity
         while (messageQueue.TryDequeue(out string newText))
         {
-            Debug.Log("Otrzymano z Azure: " + newText); // To dowiedzie, że dane dotarły
+            // LOG 2: Potwierdzenie przekazania danych do wątku głównego
+            Debug.Log($"[SpeechReceiver - UI] Przetwarzanie tekstu w Update: '{newText}'");
 
             if (transcriptionText != null)
             {
-                transcriptionText.text = newText;
+                transcriptionText.text += newText + " ";
+                Debug.Log($"[SpeechReceiver - UI] Tekst dopisany do obiektu: {transcriptionText.name}");
+                transcriptionText.ForceMeshUpdate();
+
             }
+            else
+            {
+                // LOG AWARYJNY: Jeśli zapomniałeś przeciągnąć obiekt w Inspektorze
+                Debug.LogError("[SpeechReceiver - BŁĄD] Referencja 'transcriptionText' jest PUSTA (Null) w Inspektorze! Tekst nie ma gdzie się wyrenderować.");
+            }
+        }
+    }
+
+    public void ClearTranscription()
+    {
+        if (transcriptionText != null)
+        {
+            transcriptionText.text = "";
+            Debug.Log("[SpeechReceiver] Wyczyszczono tekst transkrypcji.");
         }
     }
 
@@ -85,6 +106,10 @@ public class SpeechReceiver : MonoBehaviour
         if (udpClient != null)
         {
             udpClient.Close();
+        }
+        if (receiveThread != null && receiveThread.IsAlive)
+        {
+            receiveThread.Abort();
         }
     }
 }
