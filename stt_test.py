@@ -2,9 +2,15 @@ import os
 import socket
 from dotenv import load_dotenv
 import azure.cognitiveservices.speech as speechsdk
+from docx import Document
+import pathlib
+print(pathlib.Path(__file__).parent.resolve())
 
 UNITY_IP = "127.0.0.1"
 UNITY_PORT = 5005
+
+document = Document()
+document.save(str(pathlib.Path(__file__).parent.resolve())+'/test.docx')
 
 def speak_to_microphone(api_key, region):
     speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
@@ -26,7 +32,10 @@ def speak_to_microphone(api_key, region):
 
         if speech_recognition_result.reason == speechsdk.ResultReason.RecognizedSpeech:
             text = speech_recognition_result.text
-            print("Rozpoznano: {}".format(text))
+            print("Rozpoznano: {}".format(speech_recognition_result.text))
+            document.add_paragraph(format(speech_recognition_result.text))
+            
+            document.save(str(pathlib.Path(__file__).parent.resolve())+'/test.docx')
 
             sock.sendto(text.encode("utf-8"), (UNITY_IP, UNITY_PORT))
 
