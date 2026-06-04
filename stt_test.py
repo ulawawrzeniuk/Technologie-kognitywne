@@ -1,58 +1,91 @@
 import os
 import socket
+import time
+import pathlib
+
 from dotenv import load_dotenv
 import azure.cognitiveservices.speech as speechsdk
-from docx import Document
-import pathlib
-print(pathlib.Path(__file__).parent.resolve())
 
 UNITY_IP = "127.0.0.1"
 UNITY_PORT = 5005
 
-document = Document()
-document.save(str(pathlib.Path(__file__).parent.resolve())+'/test.docx')
+# Path to output text file
+TXT_FILE = pathlib.Path(__file__).parent / "test.txt"
 
-def speak_to_microphone(api_key, region):
-    speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
+# Clear the file on startup (remove these 2 lines if you want to keep old content)
+with open(TXT_FILE, "w", encoding="utf-8") as f:
+    pass
+
+print(pathlib.Path(__file__).parent.resolve())
+
+
+def continuous_recognition(api_key, region):
+    speech_config = speechsdk.SpeechConfig(
+        subscription=api_key,
+        region=region
+    )
     speech_config.speech_recognition_language = "pl-PL"
-    audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
-    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config)
 
-    #set timeout durations
-    speech_recognizer.properties.set_property(speechsdk.PropertyId.SpeechServiceConnection_InitialSilenceTimeoutMs, "5000")
-    speech_recognizer.properties.set_property(speechsdk.PropertyId.SpeechServiceConnection_EndSilenceTimeoutMs, "5000")
+    audio_config = speechsdk.audio.AudioConfig(
+        use_default_microphone=True
+    )
+
+    speech_recognizer = speechsdk.SpeechRecognizer(
+        speech_config=speech_config,
+        audio_config=audio_config
+    )
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    print(f"UDP connection -> {UNITY_IP}:{UNITY_PORT}")
 
-    print("powiedz cos")
-    
-    while True:
-        speech_recognition_result = speech_recognizer.recognize_once_async().get()
+    print(f"Połączenie UDP -> {UNITY_IP}:{UNITY_PORT}")
 
-        if speech_recognition_result.reason == speechsdk.ResultReason.RecognizedSpeech:
-            text = speech_recognition_result.text
-            print("Rozpoznano: {}".format(speech_recognition_result.text))
-            document.add_paragraph(format(speech_recognition_result.text))
-            
-            document.save(str(pathlib.Path(__file__).parent.resolve())+'/test.docx')
+    done = False
 
+    def stop_cb(evt):
+        print(f"Zatrzymano nasłuch: {evt}")
+        nonlocal done
+        done = True
+
+    def recognized_cb(evt):
+        if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
+            text = evt.result.text
+
+            print(f"Rozpoznano: {text}")
+
+            # Send text to Unity
             sock.sendto(text.encode("utf-8"), (UNITY_IP, UNITY_PORT))
 
+            # Append text to file
+            with open(TXT_FILE, "a", encoding="utf-8") as f:
+                f.write(text + "\n")
+
+            # Stop on voice command
             if "koniec tekstu" in text.lower():
-                print("Koniec rozpoznawania")
-                break
-        elif speech_recognition_result.reason == speechsdk.ResultReason.NoMatch:
-            print("Nie rozpoznano mowy: {}".format(speech_recognition_result.no_match_details))
-        elif speech_recognition_result.reason == speechsdk.ResultReason.Canceled:
-            cancellation_details = speech_recognition_result.cancellation_details
-            print("Rozpoznawanie anulowane: {}".format(cancellation_details.reason))
-            if cancellation_details.reason == speechsdk.CancellationReason.Error:
-                print("Błąd: {}".format(cancellation_details.error_details))
-                print("Upewnij się, że klucz API i region są poprawne.")
+                print("Wykryto komendę kończącą.")
+                speech_recognizer.stop_continuous_recognition_async()
+
+    # Register event handlers
+    speech_recognizer.recognized.connect(recognized_cb)
+    speech_recognizer.session_stopped.connect(stop_cb)
+    speech_recognizer.canceled.connect(stop_cb)
+
+    print("Rozpoczęto ciągłe rozpoznawanie mowy. Mów...")
+
+    speech_recognizer.start_continuous_recognition_async()
+
+    while not done:
+        time.sleep(0.5)
+
+    print("Zamykanie programu...")
+    sock.close()
+
+
 load_dotenv()
 
 api_key = os.getenv("api_key")
 region = os.getenv("region")
 
-speak_to_microphone(api_key, region)
+if not api_key or not region:
+    print("Błąd: Nie znaleziono kluczy API. Sprawdź plik .env.")
+else:
+    continuous_recognition(api_key, region)
