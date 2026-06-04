@@ -5,20 +5,21 @@ using System.Text;
 public class UdpSender : MonoBehaviour
 {
     public string targetIP = "127.0.0.1";
-    public int targetPort = 5006; // Nowy port, na którym nasłuchuje Python
+    public int targetPort = 5006;
 
-    public void SendStopSignal()
+    // Te funkcje podepniesz pod odpowiednie przyciski w Unity (On Click)
+    public void SendStopSignal() { SendData("STOP_RECORDING"); }
+    public void SendGenerateMapa() { SendData("GENERATE_MAPA"); }
+    public void SendGenerateTekst() { SendData("GENERATE_TEXT"); }
+
+    private void SendData(string message)
     {
         try
         {
             UdpClient client = new UdpClient();
-            byte[] data = Encoding.UTF8.GetBytes("STOP_RECORDING");
+            byte[] data = Encoding.UTF8.GetBytes(message);
             client.Send(data, data.Length, targetIP, targetPort);
-            Debug.Log("Wysłano sygnał STOP do Pythona");
         }
-        catch (System.Exception e)
-        {
-            Debug.LogError("Błąd wysyłania UDP: " + e.Message);
-        }
+        catch (System.Exception e) { Debug.LogError("Błąd UDP: " + e.Message); }
     }
 }
