@@ -1,7 +1,7 @@
 import socket
 import threading
-from python_scripts.app_state import AppState
-from python_scripts.config import PYTHON_LISTEN_PORT, UNITY_IP, UNITY_PORT
+from app_state import AppState
+from config import PYTHON_LISTEN_PORT, UNITY_IP, UNITY_PORT
 
 def _udp_listener():
     """Wewnętrzna funkcja działająca w tle, czekająca na komendy z Unity."""

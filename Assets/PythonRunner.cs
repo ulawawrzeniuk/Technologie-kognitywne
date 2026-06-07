@@ -5,11 +5,8 @@ using Debug = UnityEngine.Debug;
 public class PythonRunner : MonoBehaviour
 {
     [Header("Ścieżki bezwzględne")]
-    [Tooltip("Ścieżka do pliku python.exe na Twoim komputerze, np. C:\\Python310\\python.exe; lub w srodowisku wirtualnym C:\\Users\\sciezka\\do\\projektu\\venv\\Scripts\\python.exe")]
-    public string pythonInterpreterPath = @"";
-
-    [Tooltip("Ścieżka do Twojego pliku main.py, np. C:\\Users\\...\\python_scripts\\main.py")]
-    public string pythonScriptPath = @"";
+    public string pythonInterpreterPath = @"C:\Users\marys\Technologie-kognitywne\python_scripts\venv\Scripts\python.exe";
+    public string pythonScriptPath = @"C:\Users\marys\Technologie-kognitywne\python_scripts\main.py";
 
     private Process pythonProcess;
 
@@ -24,29 +21,28 @@ public class PythonRunner : MonoBehaviour
         try
         {
             pythonProcess = new Process();
-            pythonProcess.StartInfo.FileName = pythonInterpreterPath;
-            pythonProcess.StartInfo.Arguments = $"\"{pythonScriptPath}\"";
 
-            // Konfiguracja okna procesu
-            pythonProcess.StartInfo.UseShellExecute = true; // Zostaw na true, by widzieć okno konsoli Pythona podczas testów
+            // Uruchomienie przez CMD wymusi pozostawienie okna otwartego po zakończeniu/błędzie skryptu
+            pythonProcess.StartInfo.FileName = "cmd.exe";
+            pythonProcess.StartInfo.Arguments = $"/k \"\"{pythonInterpreterPath}\" \"{pythonScriptPath}\"\"";
+
+            pythonProcess.StartInfo.UseShellExecute = true;
             pythonProcess.StartInfo.CreateNoWindow = false;
 
             pythonProcess.Start();
-            Debug.Log("[PythonRunner] Pomyślnie uruchomiono skrypt Pythona.");
+            Debug.Log("[PythonRunner] Uruchomiono proces CMD. Sprawdź okno konsoli na pulpicie.");
         }
         catch (System.Exception e)
         {
-            Debug.LogError($"[PythonRunner] Błąd uruchamiania Pythona. Sprawdź ścieżki! Szczegóły: {e.Message}");
+            Debug.LogError($"[PythonRunner] Błąd C#: {e.Message}");
         }
     }
 
     void OnApplicationQuit()
     {
-        // Sprzątanie: Zabijamy proces Pythona, żeby nie został "osierocony" w tle
         if (pythonProcess != null && !pythonProcess.HasExited)
         {
             pythonProcess.Kill();
-            Debug.Log("[PythonRunner] Zamknięto proces Pythona po wyjściu z aplikacji.");
         }
     }
 }

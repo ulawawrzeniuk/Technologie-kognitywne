@@ -11,3 +11,5 @@
 venv
 results
 python_scripts/__pycache__
+*.mp4
+Assets/VRCinemaforMobile

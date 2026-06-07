@@ -1,0 +1,7 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\Oculus VR, LLC\Oculus]
+"VRPreviewLaunchLink"=dword:00000001
+"ExperimentalExtensions"=dword:00000001
+"PassthroughOverLink"=dword:00000001
+"SpatialDataOverLink"=dword:00000001
