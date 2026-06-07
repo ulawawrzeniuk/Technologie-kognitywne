@@ -1,0 +1,32 @@
+using UnityEngine;
+using System.Net.Sockets;
+using System.Text;
+
+public class UdpSender : MonoBehaviour
+{
+    public string targetIP = "127.0.0.1";
+    public int targetPort = 5006;
+
+    // Te funkcje podepniesz pod odpowiednie przyciski w Unity (On Click)
+    public void SendStopSignal() { 
+        Debug.Log("[UdpSender] Wysyłam sygnał STOP_RECORDING...");
+        SendData("STOP_RECORDING");
+    }
+    public void SendGenerateMapa() { SendData("GENERATE_MAPA"); }
+    public void SendGenerateTekst() { SendData("GENERATE_TEXT"); }
+
+    public void SendData(string message)
+    {
+        try
+        {
+            // Blok using automatycznie wywoła client.Close() i zwolni zasoby po wysłaniu
+            using (UdpClient client = new UdpClient())
+            {
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                client.Send(data, data.Length, targetIP, targetPort);
+            }
+        }
+        catch (System.Exception e) { Debug.LogError("Błąd UDP: " + e.Message); }
+    }
+    public void SendHighlight(string word) { SendData("HIGHLIGHT:" + word); }
+}

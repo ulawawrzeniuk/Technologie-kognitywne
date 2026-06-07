@@ -5,6 +5,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Threading;
 using System.Collections.Concurrent;
+using UnityEngine.UI;
 
 public class SpeechReceiver : MonoBehaviour
 {
@@ -13,6 +14,7 @@ public class SpeechReceiver : MonoBehaviour
 
     [Header("Referencje UI")]
     public TMP_Text transcriptionText;
+    public ScrollRect scrollRect;
 
     private UdpClient udpClient;
     private Thread receiveThread;
@@ -70,24 +72,35 @@ public class SpeechReceiver : MonoBehaviour
 
     void Update()
     {
+        bool textAddedThisFrame = false;
+
         // Przetwarzanie kolejki w głównym wątku Unity
         while (messageQueue.TryDequeue(out string newText))
         {
-            // LOG 2: Potwierdzenie przekazania danych do wątku głównego
-            Debug.Log($"[SpeechReceiver - UI] Przetwarzanie tekstu w Update: '{newText}'");
+            // Logika przechwytywania [NOTE] dla finalnej notatki (jeśli ją dodałeś)
+            if (newText.StartsWith("[NOTE]"))
+            {
+                string pureNote = newText.Substring(6);
+                AppStateManager stateManager = Object.FindFirstObjectByType<AppStateManager>();
+               // if (stateManager != null) stateManager.DisplayFinalNote(pureNote);
+                continue;
+            }
 
             if (transcriptionText != null)
             {
                 transcriptionText.text += newText + " ";
-                Debug.Log($"[SpeechReceiver - UI] Tekst dopisany do obiektu: {transcriptionText.name}");
-                transcriptionText.ForceMeshUpdate();
+                textAddedThisFrame = true; // Zaznaczamy, że tekst uległ zmianie
+            }
+        }
 
-            }
-            else
-            {
-                // LOG AWARYJNY: Jeśli zapomniałeś przeciągnąć obiekt w Inspektorze
-                Debug.LogError("[SpeechReceiver - BŁĄD] Referencja 'transcriptionText' jest PUSTA (Null) w Inspektorze! Tekst nie ma gdzie się wyrenderować.");
-            }
+        // Jeśli w tej klatce dopisano tekst, przewiń na dół
+        if (textAddedThisFrame && scrollRect != null)
+        {
+            // Wymuszenie aktualizacji Canvasu przed zmianą pozycji
+            Canvas.ForceUpdateCanvases();
+
+            // Ustawienie pozycji scrollbara na sam dół (0 = dół, 1 = góra)
+            scrollRect.verticalNormalizedPosition = 0f;
         }
     }
 
@@ -106,10 +119,6 @@ public class SpeechReceiver : MonoBehaviour
         if (udpClient != null)
         {
             udpClient.Close();
-        }
-        if (receiveThread != null && receiveThread.IsAlive)
-        {
-            receiveThread.Abort();
         }
     }
 }

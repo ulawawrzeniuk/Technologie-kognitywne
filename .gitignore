@@ -9,3 +9,5 @@
 .vs/
 .env
 venv
+results
+python_scripts/__pycache__

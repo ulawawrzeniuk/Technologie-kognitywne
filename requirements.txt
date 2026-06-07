@@ -1,2 +1,4 @@
 dotenv
 azure-cognitiveservices-speech
+notebooklm-py
+playwright
