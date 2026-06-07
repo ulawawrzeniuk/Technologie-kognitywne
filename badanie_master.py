@@ -4,16 +4,20 @@ import socket
 import pathlib
 import asyncio
 import threading
+
 from dotenv import load_dotenv
 import azure.cognitiveservices.speech as speechsdk
 from notebooklm import NotebookLMClient
 
+
 UNITY_IP = "127.0.0.1"
 UNITY_PORT = 5005
-PYTHON_LISTEN_PORT = 5006  # Port, na którym Python słucha Unity
+
+# Python listens here for STOP_RECORDING from Unity
+PYTHON_LISTEN_PORT = 5006
 
 stop_recording = False
-prompt_choice = None  # Flaga wyboru rodzaju notatki z VR
+
 
 def get_next_filename(base_dir):
     i = 1
@@ -23,127 +27,293 @@ def get_next_filename(base_dir):
             return filename
         i += 1
 
-async def generate_notes_from_file(filepath, style):
-    print("\n[NotebookLM] Rozpoczynam generowanie notatki...")
-    async with NotebookLMClient.from_storage() as client:
-        notebook = await client.notebooks.create("Analiza Wykladu VR")
-        await client.sources.add_file(notebook.id, filepath, wait=True)
-        
-        # Wybór promptu na podstawie decyzji z Unity
-        if style == "MAPA":
-            prompt_text = "Przygotuj notatkę z tego wykładu w formie szczegółowej mapy myśli. Użyj wyłącznie wyraźnych wcięć, wypunktowań i logicznej hierarchii pojęć. Nie pisz ciągłym tekstem."
-        else:
-            prompt_text = "Przygotuj bardzo szczegółową notatkę z tego wykładu w formie profesjonalnego, ciągłego tekstu. Podziel tekst na czytelne, spójne akapity. Absolutnie nie używaj wypunktowań ani list."
 
-        response = await client.chat.ask(notebook.id, prompt_text)
+async def generate_notes_from_file(filepath):
+    print("\n[NotebookLM] Rozpoczynam generowanie notatki...")
+
+    async with NotebookLMClient.from_storage() as client:
+        notebook = await client.notebooks.create(
+            "Analiza Wykladu VR"
+        )
+
+        await client.sources.add_file(
+            notebook.id,
+            filepath,
+            wait=True
+        )
+
+        response = await client.chat.ask(
+            notebook.id,
+            """
+            Przygotuj szczegółową notatkę z tego wykładu.
+
+            Uwzględnij:
+            - główne tezy
+            - najważniejsze wnioski
+            - kluczowe pojęcia
+            - krótkie podsumowanie na końcu
+            """
+        )
+
         return response.answer
 
+
 def udp_listener():
-    """Ten wątek działa w tle i czeka na komendy z Unity"""
-    global stop_recording, prompt_choice
-    listen_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    listen_sock.bind(("127.0.0.1", PYTHON_LISTEN_PORT))
-    print(f"[Python] Nasłuchuje komend z Unity na porcie {PYTHON_LISTEN_PORT}...")
-    
-    # Wątek musi działać tak długo, aż nie otrzyma obu komend (stop i styl)
-    while True:
+    """
+    Nasłuchuje komunikatu STOP_RECORDING z Unity.
+    """
+
+    global stop_recording
+
+    listen_sock = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM
+    )
+
+    listen_sock.bind(
+        ("127.0.0.1", PYTHON_LISTEN_PORT)
+    )
+
+    print(
+        f"[Python] Nasłuchuje komend z Unity "
+        f"na porcie {PYTHON_LISTEN_PORT}..."
+    )
+
+    while not stop_recording:
+
         try:
             listen_sock.settimeout(1.0)
+
             data, addr = listen_sock.recvfrom(1024)
-            message = data.decode('utf-8')
-            
+
+            message = data.decode("utf-8")
+
             if message == "STOP_RECORDING":
-                print("\n[Python] Otrzymano sygnał STOP z Unity! Zamykam nagrywanie.")
+                print(
+                    "\n[Python] Otrzymano sygnał STOP "
+                    "z Unity."
+                )
                 stop_recording = True
-            elif message == "GENERATE_MAPA":
-                print("\n[Python] Wybrano mapę myśli.")
-                prompt_choice = "MAPA"
-            elif message == "GENERATE_TEXT":
-                print("\n[Python] Wybrano ciągły tekst.")
-                prompt_choice = "TEXT"
-                
-            # Jeśli nagrywanie jest wyłączone i dokonano wyboru stylu, zamykamy nasłuchiwanie
-            if stop_recording and prompt_choice is not None:
-                break
-                
+
         except socket.timeout:
             continue
-        except Exception as e:
+
+        except Exception:
             pass
-            
+
     listen_sock.close()
 
+
 def run_pipeline(api_key, region):
-    global stop_recording, prompt_choice
+
+    global stop_recording
+
     stop_recording = False
-    prompt_choice = None
-    
-    # Uruchamiamy ucho nasłuchujące kliknięć z Unity
-    listener_thread = threading.Thread(target=udp_listener, daemon=True)
+
+    listener_thread = threading.Thread(
+        target=udp_listener,
+        daemon=True
+    )
     listener_thread.start()
 
-    speech_config = speechsdk.SpeechConfig(subscription=api_key, region=region)
-    speech_config.speech_recognition_language = "pl-PL"
-    audio_config = speechsdk.audio.AudioConfig(use_default_microphone=True)
-    speech_recognizer = speechsdk.SpeechRecognizer(speech_config=speech_config, audio_config=audio_config)
+    speech_config = speechsdk.SpeechConfig(
+        subscription=api_key,
+        region=region
+    )
 
-    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    
-    current_dir = str(pathlib.Path(__file__).parent.resolve())
-    output_filepath = get_next_filename(current_dir)
-    print(f"Dane badanego zostaną zapisane w: {output_filepath}")
-    
-    # Funkcja wyzwalana automatycznie, gdy Azure rozpozna zdanie
+    speech_config.speech_recognition_language = "pl-PL"
+
+    audio_config = speechsdk.audio.AudioConfig(
+        use_default_microphone=True
+    )
+
+    speech_recognizer = speechsdk.SpeechRecognizer(
+        speech_config=speech_config,
+        audio_config=audio_config
+    )
+
+    sock = socket.socket(
+        socket.AF_INET,
+        socket.SOCK_DGRAM
+    )
+
+    current_dir = str(
+        pathlib.Path(__file__).parent.resolve()
+    )
+
+    output_filepath = get_next_filename(
+        current_dir
+    )
+
+    print(
+        f"Dane badanego zostaną zapisane w:\n"
+        f"{output_filepath}"
+    )
+
+    done = False
+
+    def stop_cb(evt):
+        nonlocal done
+
+        print(f"Sesja zakończona: {evt}")
+
+        done = True
+
     def speech_recognized_cb(evt):
-        if evt.result.reason == speechsdk.ResultReason.RecognizedSpeech:
+
+        global stop_recording
+
+        if (
+            evt.result.reason
+            == speechsdk.ResultReason.RecognizedSpeech
+        ):
+
             text = evt.result.text
-            print("Rozpoznano: {}".format(text))
-            sock.sendto(text.encode("utf-8"), (UNITY_IP, UNITY_PORT))
-            with open(output_filepath, "a", encoding="utf-8") as f:
+
+            print(f"Rozpoznano: {text}")
+
+            # Send transcript to Unity
+            sock.sendto(
+                text.encode("utf-8"),
+                (UNITY_IP, UNITY_PORT)
+            )
+
+            # Append transcript to file
+            with open(
+                output_filepath,
+                "a",
+                encoding="utf-8"
+            ) as f:
                 f.write(text + "\n")
 
-    # Podpinamy funkcję pod Azure i zaczynamy ciągłe słuchanie
-    speech_recognizer.recognized.connect(speech_recognized_cb)
-    speech_recognizer.start_continuous_recognition()
-    
-    print("Mów do mikrofonu (Naciśnij 'Zakończ wykład' w VR, aby zatrzymać)...")
-    
-    # Główna pętla po prostu kręci się i czeka, aż naciśniesz STOP
-    while not stop_recording:
-        time.sleep(0.5)
-        
-    # Sprzątanie po zakończeniu mówienia
-    speech_recognizer.stop_continuous_recognition()
-    print("Zakończono nasłuchiwanie. Czekam na wybór rodzaju notatki (kliknij przycisk w VR)...")
-    
-    # Pętla oczekująca na kliknięcie w przycisk stylizujący notatkę
-    while prompt_choice is None:
-        time.sleep(0.5)
-        
-    print(f"Przekazuję do AI z promptem: {prompt_choice}...")
-    
+            # Optional voice stop command
+            if "koniec tekstu" in text.lower():
+                print(
+                    "Wykryto komendę kończącą."
+                )
+                stop_recording = True
+
+    speech_recognizer.recognized.connect(
+        speech_recognized_cb
+    )
+
+    speech_recognizer.session_stopped.connect(
+        stop_cb
+    )
+
+    speech_recognizer.canceled.connect(
+        stop_cb
+    )
+
+    print(
+        "\nRozpoczęto ciągłe rozpoznawanie mowy."
+    )
+    print(
+        "Mów do mikrofonu lub naciśnij "
+        "'Zakończ wykład' w Unity."
+    )
+    print(
+        "Możesz też powiedzieć "
+        "'koniec tekstu'.\n"
+    )
+
+    speech_recognizer.start_continuous_recognition_async()
+
     try:
-        notatka = asyncio.run(generate_notes_from_file(output_filepath, prompt_choice))
-        print("\n=== GOTOWA NOTATKA ===")
+
+        while not stop_recording:
+            time.sleep(0.5)
+
+    except KeyboardInterrupt:
+
+        print(
+            "\nPrzerwano przez użytkownika."
+        )
+
+        stop_recording = True
+
+    print(
+        "\nZatrzymywanie rozpoznawania..."
+    )
+
+    speech_recognizer.stop_continuous_recognition_async()
+
+    while not done:
+        time.sleep(0.1)
+
+    print(
+        "\nZakończono nasłuchiwanie."
+    )
+    print(
+        "Przekazuję transkrypcję do NotebookLM..."
+    )
+
+    try:
+
+        notatka = asyncio.run(
+            generate_notes_from_file(
+                output_filepath
+            )
+        )
+
+        print("\n=== GOTOWA NOTATKA ===\n")
         print(notatka)
-        
-        # Zapis pliku z dopisanym formatem w nazwie (np. badany_01_notatka_mapa.txt)
-        note_filepath = output_filepath.replace(".txt", f"_notatka_{prompt_choice.lower()}.txt")
-        with open(note_filepath, "w", encoding="utf-8") as f:
+
+        note_filepath = output_filepath.replace(
+            ".txt",
+            "_notatka.txt"
+        )
+
+        with open(
+            note_filepath,
+            "w",
+            encoding="utf-8"
+        ) as f:
             f.write(notatka)
-            
+
         final_message = "[NOTE]" + notatka
-        sock.sendto(final_message.encode("utf-8"), (UNITY_IP, UNITY_PORT))
-        print(f"\nZapisano pliki: {output_filepath} oraz {note_filepath}")
-        
+
+        sock.sendto(
+            final_message.encode("utf-8"),
+            (UNITY_IP, UNITY_PORT)
+        )
+
+        print(
+            "\nZapisano pliki:"
+        )
+        print(output_filepath)
+        print(note_filepath)
+
     except Exception as e:
-        print(f"Błąd NotebookLM: {e}")
+
+        print(
+            f"\nBłąd NotebookLM: {e}"
+        )
+
+    finally:
+
+        sock.close()
+
 
 if __name__ == "__main__":
+
     load_dotenv()
+
     api_key = os.getenv("api_key")
     region = os.getenv("region")
+
     if not api_key or not region:
-        print("Brak kluczy API")
+
+        print(
+            "Błąd: Nie znaleziono kluczy API."
+        )
+        print(
+            "Sprawdź plik .env"
+        )
+
     else:
-        run_pipeline(api_key, region)
+
+        run_pipeline(
+            api_key,
+            region
+        )
